@@ -9,11 +9,11 @@ screen for capture in obs as examples of why this might be useful.
 
 Windows:
 
-1. Install python, pip, SoX, and git
+1. Install python, pip, [SoX](https://sourceforge.net/projects/sox/), and git
 2. Clone this repository
 3. Make a virtualenv and install the requirements
 4. Make sure to use cuda-accelerated torch by running the appropriate pip
-   command from (here)[https://pytorch.org/get-started/locally/].
+   command from [here](https://pytorch.org/get-started/locally/).
 5. (Optional) Set up a virtual audio cable so you can pipe the audio from your 
    PC to the hushlocal script.
 6. Run `python hushlocal --help` from the local-tools directory for further 
