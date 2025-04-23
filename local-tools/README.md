@@ -15,14 +15,8 @@ this concept which should be better in many ways.
 
 ## Setup instructions
 
-Windows:
+(Out of date)
 
-1. Install python, pip, [SoX](https://sourceforge.net/projects/sox/), and git.
-2. Clone this repository.
-3. Make a virtualenv and install the requirements.
-4. Make sure to use cuda-accelerated torch by running the appropriate pip
-   command from [here](https://pytorch.org/get-started/locally/).
-5. (Optional) Set up a virtual audio cable so you can pipe the audio from your 
-   PC to the hushlocal script.
-6. Run `python hushlocal --help` from the local-tools directory for further 
-   details on the actual command.
+New version will have the recording script run in base windows, writing to a
+SQL datastore while the translation script runs as a daemon in WSL. Expect to
+get this up and running by 4/24, will include updated instructions then.
