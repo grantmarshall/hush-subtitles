@@ -1,4 +1,3 @@
-numpy==1.25.2
-openai_whisper==20230918
-sounddevice==0.4.6
-sox==1.4.1
+numpy==2.2.5
+sounddevice==0.5.1
+sox==1.5.0
