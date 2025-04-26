@@ -41,7 +41,7 @@ def parse_args():
         parents=[parser],
     )
     parser.add_argument(
-        "-d", "--device", type=int_or_str, help="input device (numeric ID or substring)"
+        "-d", "--device", type=int_or_str, help="input device (numeric ID or substring)", required=True
     )
     parser.add_argument("-r", "--samplerate", type=int, help="sampling rate")
     parser.add_argument("-c", "--channels", type=int, help="number of input channels")
@@ -60,46 +60,45 @@ def parse_args():
 def main():
     """Entry point of the recording frontend for hush-subtitles"""
     args = parse_args()
-    if args.device is not None:
-        if args.samplerate is None:
-            device_info = sd.query_devices(args.device, "input")
-            args.samplerate = int(device_info["default_samplerate"])
-        if args.channels is None:
-            device_info = sd.query_devices(args.device, "input")
-            args.channels = int(device_info["max_input_channels"])
-        if args.outputfile is None:
-            temporary_tag = "".join(
-                random.choice(string.ascii_uppercase + string.digits) for _ in range(10)
-            )
-            args.outputfile = "temp_rec_" + temporary_tag + ".wav"
-        print(args.outputfile)
-
-        block_queue = queue.Queue()
-        frame_buffer = []
-
-        def callback(indata, frames, time, status):
-            if status:
-                print(status, file=sys.stderr)
-            block_queue.put(numpy.copy(indata))
-
-        with sd.InputStream(
-            samplerate=args.samplerate,
-            device=args.device,
-            channels=args.channels,
-            callback=callback,
-        ):
-            while len(frame_buffer) < args.time * args.samplerate:
-                frame_buffer += list(block_queue.get())
-        tfm = sox.Transformer()
-        tfm.set_output_format(channels=1, rate=16000)
-        downsampled_audio = tfm.build_array(
-            input_array=numpy.copy(frame_buffer), sample_rate_in=args.samplerate
+    if args.samplerate is None:
+        device_info = sd.query_devices(args.device, "input")
+        args.samplerate = int(device_info["default_samplerate"])
+    if args.channels is None:
+        device_info = sd.query_devices(args.device, "input")
+        args.channels = int(device_info["max_input_channels"])
+    if args.outputfile is None:
+        temporary_tag = "".join(
+            random.choice(string.ascii_uppercase + string.digits) for _ in range(10)
         )
+        args.outputfile = "temp_rec_" + temporary_tag + ".wav"
+    print(args.outputfile)
 
-        with sf.SoundFile(
-            args.outputfile, mode="x", samplerate=16000, channels=1, subtype="PCM_24"
-        ) as file:
-            file.write(downsampled_audio.astype(numpy.float32))
+    block_queue = queue.Queue()
+    frame_buffer = []
+
+    def callback(indata, frames, time, status):
+        if status:
+            print(status, file=sys.stderr)
+        block_queue.put(numpy.copy(indata))
+
+    with sd.InputStream(
+        samplerate=args.samplerate,
+        device=args.device,
+        channels=args.channels,
+        callback=callback,
+    ):
+        while len(frame_buffer) < args.time * args.samplerate:
+            frame_buffer += list(block_queue.get())
+    tfm = sox.Transformer()
+    tfm.set_output_format(channels=1, rate=16000)
+    downsampled_audio = tfm.build_array(
+        input_array=numpy.copy(frame_buffer), sample_rate_in=args.samplerate
+    )
+
+    with sf.SoundFile(
+        args.outputfile, mode="x", samplerate=16000, channels=1, subtype="PCM_24"
+    ) as file:
+        file.write(downsampled_audio.astype(numpy.float32))
 
 
 main()
