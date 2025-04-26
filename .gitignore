@@ -1,3 +1,6 @@
+# Temporary local audio recordings
+temp_rec_*.wav
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
