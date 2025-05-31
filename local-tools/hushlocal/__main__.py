@@ -77,8 +77,10 @@ def main():
     frame_buffer = []
 
     def callback(indata, frames, time, status):
+        """Called by sounddevice for each indata chunk"""
         if status:
             print(status, file=sys.stderr)
+        assert len(indata) == frames
         block_queue.put(numpy.copy(indata))
 
     with sd.InputStream(
@@ -92,7 +94,7 @@ def main():
     tfm = sox.Transformer()
     tfm.set_output_format(channels=1, rate=16000)
     downsampled_audio = tfm.build_array(
-        input_array=numpy.copy(frame_buffer), sample_rate_in=args.samplerate
+        input_array=numpy.copy(frame_buffer[:args.time * args.samplerate]), sample_rate_in=args.samplerate
     )
 
     with sf.SoundFile(
