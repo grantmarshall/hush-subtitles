@@ -2,6 +2,7 @@
 # Copyright 2025 Grant Marshall
 import argparse
 from datetime import datetime
+from enum import Enum
 import numpy
 import queue
 import random
@@ -10,6 +11,15 @@ import soundfile as sf
 import sox
 import string
 import sys
+import uuid
+
+
+class Mode(Enum):
+    """Enum for different frontend modes"""
+
+    local_record = 1
+    retrieve = 2
+    translate = 3
 
 
 def parse_args():
@@ -41,7 +51,14 @@ def parse_args():
         parents=[parser],
     )
     parser.add_argument(
-        "-d", "--device", type=int_or_str, help="input device (numeric ID or substring)", required=True
+        "-m", "--mode", choices=["local_record", "retrieve", "translate"], required=True
+    )
+    parser.add_argument(
+        "-d",
+        "--device",
+        type=int_or_str,
+        help="input device (numeric ID or substring)",
+        required=True,
     )
     parser.add_argument("-r", "--samplerate", type=int, help="sampling rate")
     parser.add_argument("-c", "--channels", type=int, help="number of input channels")
@@ -60,6 +77,20 @@ def parse_args():
 def main():
     """Entry point of the recording frontend for hush-subtitles"""
     args = parse_args()
+    mode = Mode[args.mode]
+    match mode:
+        case Mode.local_record:
+            local_record(args)
+        case Mode.translate:
+            translate(args)
+        case Mode.retrieve:
+            print("Not implemented")
+        case _:
+            print("Please provide a valid mode")
+
+
+def local_record(args):
+    """Function for recording audio and saving locally"""
     if args.samplerate is None:
         device_info = sd.query_devices(args.device, "input")
         args.samplerate = int(device_info["default_samplerate"])
@@ -94,13 +125,66 @@ def main():
     tfm = sox.Transformer()
     tfm.set_output_format(channels=1, rate=16000)
     downsampled_audio = tfm.build_array(
-        input_array=numpy.copy(frame_buffer[:args.time * args.samplerate]), sample_rate_in=args.samplerate
+        input_array=numpy.copy(frame_buffer[: args.time * args.samplerate]),
+        sample_rate_in=args.samplerate,
     )
 
     with sf.SoundFile(
         args.outputfile, mode="x", samplerate=16000, channels=1, subtype="PCM_24"
     ) as file:
         file.write(downsampled_audio.astype(numpy.float32))
+
+
+def translate(args):
+    """Record from an audio device, store it in the db, and retrieve translations"""
+    if args.samplerate is None:
+        device_info = sd.query_devices(args.device, "input")
+        args.samplerate = int(device_info["default_samplerate"])
+    if args.channels is None:
+        device_info = sd.query_devices(args.device, "input")
+        args.channels = int(device_info["max_input_channels"])
+
+    session_uuid = uuid.uuid4()
+    print(
+        "Translation session with UUID {0} started at {1}".format(
+            session_uuid, datetime.now()
+        )
+    )
+
+    block_queue = queue.Queue()
+    frame_buffer = []
+
+    def callback(indata, frames, time, status):
+        """Called by sounddevice for each indata chunk"""
+        if status:
+            print(status, file=sys.stderr)
+        assert len(indata) == frames
+        block_queue.put(numpy.copy(indata))
+
+    with sd.InputStream(
+        samplerate=args.samplerate,
+        device=args.device,
+        channels=args.channels,
+        callback=callback,
+    ):
+        try:
+            while True:
+                # fill the framebuffer with at least a second of audio data
+                while len(frame_buffer) < args.samplerate:
+                    frame_buffer += list(block_queue.get())
+                # downsample the audio to the input rate of whisper then clean the frame buffer
+                tfm = sox.Transformer()
+                tfm.set_output_format(channels=1, rate=16000)
+                downsampled_audio = tfm.build_array(
+                    input_array=numpy.copy(frame_buffer),
+                    sample_rate_in=args.samplerate,
+                )
+                frame_buffer = []
+                # insert the downsampled data into the database
+                print("Inserting data")
+
+        except KeyboardInterrupt:
+            print("Cleaning up")
 
 
 main()
