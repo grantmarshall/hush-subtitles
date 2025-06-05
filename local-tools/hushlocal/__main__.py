@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 # Copyright 2025 Grant Marshall
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 import numpy
+import psycopg2
 import queue
 import random
 import sounddevice as sd
@@ -12,6 +13,21 @@ import sox
 import string
 import sys
 import uuid
+
+
+DATABASE_NAME = "whisper"
+DATABASE_PORT = 5432
+DATA_INSERTION_SQL_STATEMENT = """
+INSERT INTO audio_data (session_id, start_ts, d)
+VALUES (%s, %s, %s)
+"""
+SESSION_CREATION_SQL_STATEMENT = """
+INSERT INTO sessions (id, active, creation_time, last_translation)
+VALUES (%s, %s, %s, %s)
+"""
+SESSION_CLOSE_SQL_STATEMENT = """
+UPDATE sessions SET active = 'False' WHERE id=%s
+"""
 
 
 class Mode(Enum):
@@ -33,7 +49,6 @@ def parse_args():
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
-        "-l",
         "--list-devices",
         action="store_true",
         help="show list of audio devices and exit",
@@ -51,23 +66,25 @@ def parse_args():
         parents=[parser],
     )
     parser.add_argument(
-        "-m", "--mode", choices=["local_record", "retrieve", "translate"], required=True
+        "--mode", choices=["local_record", "retrieve", "translate"], required=True
     )
     parser.add_argument(
-        "-d",
         "--device",
         type=int_or_str,
         help="input device (numeric ID or substring)",
         required=True,
     )
-    parser.add_argument("-r", "--samplerate", type=int, help="sampling rate")
-    parser.add_argument("-c", "--channels", type=int, help="number of input channels")
+    parser.add_argument("--samplerate", type=int, help="sampling rate")
+    parser.add_argument("--channels", type=int, help="number of input channels")
     parser.add_argument(
-        "-t", "--time", type=int, help="number of seconds to record", default=5
+        "--time", type=int, help="number of seconds to record", default=5
     )
     parser.add_argument(
-        "-o", "--outputfile", type=str, help="output file to write the wav to"
+        "--outputfile", type=str, help="output file to write the wav to"
     )
+    parser.add_argument("--host", type=str, help="host name of the database to use")
+    parser.add_argument("--password", type=str, help="password for the database")
+    parser.add_argument("--user", type=str, help="user for the database")
     unverified_args = parser.parse_args(remaining)
     # Check that all required args for recording are provided, and if not,
     # add a helpful message and error out
@@ -145,11 +162,20 @@ def translate(args):
         args.channels = int(device_info["max_input_channels"])
 
     session_uuid = uuid.uuid4()
-    print(
-        "Translation session with UUID {0} started at {1}".format(
-            session_uuid, datetime.now()
-        )
+    session_creation_time = datetime.now()
+    connection = psycopg2.connect(
+        database=DATABASE_NAME,
+        user=args.user,
+        password=args.password,
+        host=args.host,
+        port=DATABASE_PORT,
     )
+    session_cursor = connection.cursor()
+    session_cursor.execute(
+        SESSION_CREATION_SQL_STATEMENT,
+        (str(session_uuid), True, session_creation_time, session_creation_time),
+    )
+    connection.commit()
 
     block_queue = queue.Queue()
     frame_buffer = []
@@ -160,6 +186,9 @@ def translate(args):
             print(status, file=sys.stderr)
         assert len(indata) == frames
         block_queue.put(numpy.copy(indata))
+
+    data_cursor = connection.cursor()
+    current_translation_time = session_creation_time
 
     with sd.InputStream(
         samplerate=args.samplerate,
@@ -172,6 +201,7 @@ def translate(args):
                 # fill the framebuffer with at least a second of audio data
                 while len(frame_buffer) < args.samplerate:
                     frame_buffer += list(block_queue.get())
+
                 # downsample the audio to the input rate of whisper then clean the frame buffer
                 tfm = sox.Transformer()
                 tfm.set_output_format(channels=1, rate=16000)
@@ -179,12 +209,24 @@ def translate(args):
                     input_array=numpy.copy(frame_buffer),
                     sample_rate_in=args.samplerate,
                 )
-                frame_buffer = []
-                # insert the downsampled data into the database
+                frame_buffer = frame_buffer[args.samplerate :]
+                # TODO: insert the downsampled data into the database
                 print("Inserting data")
+                data_cursor.execute(
+                    DATA_INSERTION_SQL_STATEMENT,
+                    (str(session_uuid), current_translation_time, downsampled_audio.tolist()),
+                )
+                connection.commit()
+                current_translation_time = current_translation_time + timedelta(seconds=1)
 
         except KeyboardInterrupt:
             print("Cleaning up")
+            data_cursor.close()
+            session_cursor.execute(SESSION_CLOSE_SQL_STATEMENT, (str(session_uuid),))
+            connection.commit()
+            session_cursor.close()
+            connection.close()
+            print("Session closed")
 
 
 main()

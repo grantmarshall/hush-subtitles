@@ -1,6 +1,6 @@
 -- Table for an individual translation session
 CREATE TABLE sessions (
-    id BIGSERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY,
     active BOOLEAN,
     creation_time TIMESTAMP,
     last_translation TIMESTAMP
@@ -8,14 +8,14 @@ CREATE TABLE sessions (
 
 -- Table for audio data in a translation session, rows represent 1s of audio data
 CREATE TABLE audio_data (
-    session_id BIGSERIAL REFERENCES sessions(session_id),
+    session_id UUID REFERENCES sessions(id),
     start_ts TIMESTAMP,
-    d BYTEA
+    d FLOAT ARRAY
 );
 
 -- Table for translations produced for sessions
 CREATE TABLE translations (
-    session_id BIGSERIAL REFERENCES sessions(session_id),
+    session_id UUID REFERENCES sessions(id),
     start_ts TIMESTAMP,
     translation TEXT
 );
