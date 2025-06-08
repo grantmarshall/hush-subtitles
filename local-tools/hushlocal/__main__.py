@@ -14,7 +14,6 @@ import string
 import sys
 import uuid
 
-
 DATABASE_NAME = "whisper"
 DATABASE_PORT = 5432
 DATA_INSERTION_SQL_STATEMENT = """
@@ -49,7 +48,7 @@ def parse_args():
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
-        "--list-devices",
+        "--list_devices",
         action="store_true",
         help="show list of audio devices and exit",
     )
@@ -85,6 +84,9 @@ def parse_args():
     parser.add_argument("--host", type=str, help="host name of the database to use")
     parser.add_argument("--password", type=str, help="password for the database")
     parser.add_argument("--user", type=str, help="user for the database")
+    parser.add_argument(
+        "--session_id", type=str, help="session id of the session to retrieve"
+    )
     unverified_args = parser.parse_args(remaining)
     # Check that all required args for recording are provided, and if not,
     # add a helpful message and error out
@@ -206,18 +208,23 @@ def translate(args):
                 tfm = sox.Transformer()
                 tfm.set_output_format(channels=1, rate=16000)
                 downsampled_audio = tfm.build_array(
-                    input_array=numpy.copy(frame_buffer),
+                    input_array=numpy.copy(frame_buffer[: args.samplerate]),
                     sample_rate_in=args.samplerate,
                 )
                 frame_buffer = frame_buffer[args.samplerate :]
-                # TODO: insert the downsampled data into the database
                 print("Inserting data")
                 data_cursor.execute(
                     DATA_INSERTION_SQL_STATEMENT,
-                    (str(session_uuid), current_translation_time, downsampled_audio.tolist()),
+                    (
+                        str(session_uuid),
+                        current_translation_time,
+                        downsampled_audio.tolist(),
+                    ),
                 )
                 connection.commit()
-                current_translation_time = current_translation_time + timedelta(seconds=1)
+                current_translation_time = current_translation_time + timedelta(
+                    seconds=1
+                )
 
         except KeyboardInterrupt:
             print("Cleaning up")
